@@ -20,7 +20,8 @@ namespace QuantLib {
 
     inline ConstantBlackScholesParameters extractConstantBlackScholesParameters(
         const GeneralizedBlackScholesProcess& process,
-        const Date& maturity) {
+        const Date& maturity,
+        Real strike) {
 
         ConstantBlackScholesParameters params;
 
@@ -43,19 +44,20 @@ namespace QuantLib {
                 .rate();
 
         params.sigma =
-            process.blackVolatility()->blackVol(maturity, params.s0);
+            process.blackVolatility()->blackVol(maturity, strike);
 
         return params;
     }
 
     inline ext::shared_ptr<StochasticProcess1D> makeConstantBlackScholesProcess(
         const ext::shared_ptr<GeneralizedBlackScholesProcess>& process,
-        const Date& maturity) {
+        const Date& maturity,
+        Real strike) {
 
         QL_REQUIRE(process, "null Black-Scholes process");
 
         ConstantBlackScholesParameters params =
-            extractConstantBlackScholesParameters(*process, maturity);
+            extractConstantBlackScholesParameters(*process, maturity, strike);
 
         return ext::shared_ptr<StochasticProcess1D>(
             new ConstantBlackScholesProcess(

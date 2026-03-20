@@ -70,8 +70,14 @@ namespace QuantLib {
                 ext::dynamic_pointer_cast<EuropeanExercise>(this->arguments_.exercise);
             QL_REQUIRE(exercise, "wrong exercise given");
 
+            ext::shared_ptr<PlainVanillaPayoff> payoff =
+                ext::dynamic_pointer_cast<PlainVanillaPayoff>(this->arguments_.payoff);
+            QL_REQUIRE(payoff, "non-plain payoff given");
+
+            const Real strike = payoff->strike();
+
             ext::shared_ptr<StochasticProcess1D> constProcess =
-                makeConstantBlackScholesProcess(process_, exercise->lastDate());
+                makeConstantBlackScholesProcess(process_, exercise->lastDate(), strike);
 
             return ext::shared_ptr<path_generator_type>(
                          new path_generator_type(constProcess,
