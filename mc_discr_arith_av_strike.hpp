@@ -1,22 +1,3 @@
-/* -*- mode: c++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
-/*
- Copyright (C) 2008 Master IMAFA - Polytech'Nice Sophia - Université de Nice Sophia Antipolis
-
- This file is part of QuantLib, a free-software/open-source library
- for financial quantitative analysts and developers - http://quantlib.org/
-
- QuantLib is free software: you can redistribute it and/or modify it
- under the terms of the QuantLib license.  You should have received a
- copy of the license along with this program; if not, please email
- <quantlib-dev@lists.sf.net>. The license is also available online at
- <http://quantlib.org/license.shtml>.
-
- This program is distributed in the hope that it will be useful, but WITHOUT
- ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- FOR A PARTICULAR PURPOSE.  See the license for more details.
-*/
-
 /*! \file mc_discr_arith_av_strike.hpp
     \brief Monte Carlo engine for discrete arithmetic average-strike Asian
 */
@@ -28,7 +9,12 @@
 #include <ql/pricingengines/asian/mc_discr_arith_av_strike.hpp>
 #include <ql/pricingengines/asian/mcdiscreteasianenginebase.hpp>
 #include <ql/processes/blackscholesprocess.hpp>
+#include <ql/termstructures/yieldtermstructure.hpp>
+#include <ql/termstructures/volatility/equityfx/blackvoltermstructure.hpp>
+#include <ql/timegrid.hpp>
 #include <utility>
+
+#include "constantprocesshelper.hpp"
 
 namespace QuantLib {
 
@@ -45,6 +31,7 @@ namespace QuantLib {
             path_pricer_type;
         typedef typename MCDiscreteAveragingAsianEngineBase<SingleVariate, RNG, S>::stats_type
             stats_type;
+
         // constructor
         MCDiscreteArithmeticASEngine_2(
             const ext::shared_ptr<GeneralizedBlackScholesProcess>& process,
@@ -53,10 +40,15 @@ namespace QuantLib {
             Size requiredSamples,
             Real requiredTolerance,
             Size maxSamples,
-            BigNatural seed);
+            BigNatural seed,
+            bool constantParameters);
 
       protected:
         ext::shared_ptr<path_pricer_type> pathPricer() const override;
+        ext::shared_ptr<path_generator_type> pathGenerator() const override;
+
+      private:
+        bool constantParameters_ = false;
     };
 
 
@@ -70,7 +62,8 @@ namespace QuantLib {
         Size requiredSamples,
         Real requiredTolerance,
         Size maxSamples,
-        BigNatural seed)
+        BigNatural seed,
+        bool constantParameters)
     : MCDiscreteAveragingAsianEngineBase<SingleVariate, RNG, S>(process,
                                                                 brownianBridge,
                                                                 antitheticVariate,
@@ -78,7 +71,8 @@ namespace QuantLib {
                                                                 requiredSamples,
                                                                 requiredTolerance,
                                                                 maxSamples,
-                                                                seed) {}
+                                                                seed),
+      constantParameters_(constantParameters) {}
 
     template <class RNG, class S>
     inline ext::shared_ptr<typename MCDiscreteArithmeticASEngine_2<RNG, S>::path_pricer_type>
@@ -101,6 +95,34 @@ namespace QuantLib {
                                         process->riskFreeRate()->discount(exercise->lastDate()),
                                         this->arguments_.runningAccumulator,
                                         this->arguments_.pastFixings));
+    }
+
+    template <class RNG, class S>
+    inline ext::shared_ptr<typename MCDiscreteArithmeticASEngine_2<RNG, S>::path_generator_type>
+    MCDiscreteArithmeticASEngine_2<RNG, S>::pathGenerator() const {
+
+        TimeGrid grid = this->timeGrid();
+        typename RNG::rsg_type gen =
+            RNG::make_sequence_generator(grid.size() - 1, this->seed_);
+
+        if (!constantParameters_) {
+            return ext::shared_ptr<path_generator_type>(
+                new path_generator_type(this->process_, grid, gen, this->brownianBridge_));
+        }
+
+        ext::shared_ptr<EuropeanExercise> exercise =
+            ext::dynamic_pointer_cast<EuropeanExercise>(this->arguments_.exercise);
+        QL_REQUIRE(exercise, "wrong exercise given");
+
+        ext::shared_ptr<GeneralizedBlackScholesProcess> process =
+            ext::dynamic_pointer_cast<GeneralizedBlackScholesProcess>(this->process_);
+        QL_REQUIRE(process, "Black-Scholes process required");
+
+        ext::shared_ptr<StochasticProcess1D> constProcess =
+            makeConstantBlackScholesProcess(process, exercise->lastDate());
+
+        return ext::shared_ptr<path_generator_type>(
+            new path_generator_type(constProcess, grid, gen, this->brownianBridge_));
     }
 
 
@@ -127,6 +149,7 @@ namespace QuantLib {
         Real tolerance_;
         bool brownianBridge_ = true;
         BigNatural seed_ = 0;
+        bool constantParameters_ = false;
     };
 
     template <class RNG, class S>
@@ -185,6 +208,7 @@ namespace QuantLib {
     template <class RNG, class S>
     inline MakeMCDiscreteArithmeticASEngine_2<RNG, S>&
     MakeMCDiscreteArithmeticASEngine_2<RNG, S>::withConstantParameters(bool b) {
+        constantParameters_ = b;
         return *this;
     }
 
@@ -192,10 +216,16 @@ namespace QuantLib {
     inline MakeMCDiscreteArithmeticASEngine_2<RNG, S>::operator ext::shared_ptr<PricingEngine>()
         const {
         return ext::shared_ptr<PricingEngine>(new MCDiscreteArithmeticASEngine_2<RNG, S>(
-            process_, brownianBridge_, antithetic_, samples_, tolerance_, maxSamples_, seed_));
+            process_,
+            brownianBridge_,
+            antithetic_,
+            samples_,
+            tolerance_,
+            maxSamples_,
+            seed_,
+            constantParameters_));
     }
 
 }
-
 
 #endif

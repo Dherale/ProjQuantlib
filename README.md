@@ -72,3 +72,25 @@ After your modifications:
 
 Good luck!
 
+
+
+---
+
+## How to build and run the project
+
+### Compilation
+
+You can compile the project using:
+
+```bash
+make
+```
+
+On some systems (especially macOS with Homebrew like ours), the Boost headers are
+not automatically found by the compiler.
+
+To fix this without modifying the Makefile, you can specify the include path manually:
+
+```bash
+CPLUS_INCLUDE_PATH=/opt/homebrew/opt/boost/include make
+```

@@ -1,24 +1,3 @@
-/* -*- mode: c++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
-/*
- Copyright (C) 2000, 2001, 2002, 2003 RiskMap srl
- Copyright (C) 2003 Ferdinando Ametrano
- Copyright (C) 2007, 2008 StatPro Italia srl
-
- This file is part of QuantLib, a free-software/open-source library
- for financial quantitative analysts and developers - http://quantlib.org/
-
- QuantLib is free software: you can redistribute it and/or modify it
- under the terms of the QuantLib license.  You should have received a
- copy of the license along with this program; if not, please email
- <quantlib-dev@lists.sf.net>. The license is also available online at
- <http://quantlib.org/license.shtml>.
-
- This program is distributed in the hope that it will be useful, but WITHOUT
- ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- FOR A PARTICULAR PURPOSE.  See the license for more details.
-*/
-
 /*! \file mceuropeanengine.hpp
     \brief Monte Carlo European option engine
 */
@@ -28,8 +7,12 @@
 
 #include <ql/pricingengines/vanilla/mceuropeanengine.hpp>
 #include <ql/processes/blackscholesprocess.hpp>
-#include <ql/termstructures/volatility/equityfx/blackconstantvol.hpp>
-#include <ql/termstructures/volatility/equityfx/blackvariancecurve.hpp>
+#include <ql/exercise.hpp>
+#include <ql/termstructures/yieldtermstructure.hpp>
+#include <ql/termstructures/volatility/equityfx/blackvoltermstructure.hpp>
+#include <ql/timegrid.hpp>
+
+#include "constantprocesshelper.hpp"
 
 namespace QuantLib {
 
@@ -46,6 +29,7 @@ namespace QuantLib {
             path_generator_type;
         typedef typename MCVanillaEngine<SingleVariate, RNG, S>::path_pricer_type path_pricer_type;
         typedef typename MCVanillaEngine<SingleVariate, RNG, S>::stats_type stats_type;
+
         // constructor
         MCEuropeanEngine_2(const boost::shared_ptr<GeneralizedBlackScholesProcess>& process,
                            Size timeSteps,
@@ -55,10 +39,15 @@ namespace QuantLib {
                            Size requiredSamples,
                            Real requiredTolerance,
                            Size maxSamples,
-                           BigNatural seed);
+                           BigNatural seed,
+                           bool constantParameters);
 
       protected:
-        boost::shared_ptr<path_pricer_type> pathPricer() const;
+        boost::shared_ptr<path_pricer_type> pathPricer() const override;
+        boost::shared_ptr<path_generator_type> pathGenerator() const override;
+
+      private:
+        bool constantParameters_ = false;
     };
 
     //! Monte Carlo European engine factory
@@ -86,6 +75,7 @@ namespace QuantLib {
         Real tolerance_;
         bool brownianBridge_;
         BigNatural seed_;
+        bool constantParameters_ = false;
     };
 
 
@@ -101,7 +91,8 @@ namespace QuantLib {
         Size requiredSamples,
         Real requiredTolerance,
         Size maxSamples,
-        BigNatural seed)
+        BigNatural seed,
+        bool constantParameters)
     : MCVanillaEngine<SingleVariate, RNG, S>(process,
                                              timeSteps,
                                              timeStepsPerYear,
@@ -111,7 +102,8 @@ namespace QuantLib {
                                              requiredSamples,
                                              requiredTolerance,
                                              maxSamples,
-                                             seed) {}
+                                             seed),
+      constantParameters_(constantParameters) {}
 
 
     template <class RNG, class S>
@@ -132,13 +124,41 @@ namespace QuantLib {
                                    process->riskFreeRate()->discount(this->timeGrid().back())));
     }
 
+    template <class RNG, class S>
+    inline boost::shared_ptr<typename MCEuropeanEngine_2<RNG, S>::path_generator_type>
+    MCEuropeanEngine_2<RNG, S>::pathGenerator() const {
+
+        TimeGrid grid = this->timeGrid();
+        typename RNG::rsg_type gen =
+            RNG::make_sequence_generator(grid.size() - 1, this->seed_);
+
+        if (!constantParameters_) {
+            return boost::shared_ptr<path_generator_type>(
+                new path_generator_type(this->process_, grid, gen, this->brownianBridge_));
+        }
+
+        boost::shared_ptr<EuropeanExercise> exercise =
+            boost::dynamic_pointer_cast<EuropeanExercise>(this->arguments_.exercise);
+        QL_REQUIRE(exercise, "wrong exercise given");
+
+        boost::shared_ptr<GeneralizedBlackScholesProcess> process =
+            boost::dynamic_pointer_cast<GeneralizedBlackScholesProcess>(this->process_);
+        QL_REQUIRE(process, "Black-Scholes process required");
+
+        boost::shared_ptr<StochasticProcess1D> constProcess =
+            makeConstantBlackScholesProcess(process, exercise->lastDate());
+
+        return boost::shared_ptr<path_generator_type>(
+            new path_generator_type(constProcess, grid, gen, this->brownianBridge_));
+    }
+
 
     template <class RNG, class S>
     inline MakeMCEuropeanEngine_2<RNG, S>::MakeMCEuropeanEngine_2(
         const boost::shared_ptr<GeneralizedBlackScholesProcess>& process)
     : process_(process), antithetic_(false), steps_(Null<Size>()), stepsPerYear_(Null<Size>()),
       samples_(Null<Size>()), maxSamples_(Null<Size>()), tolerance_(Null<Real>()),
-      brownianBridge_(false), seed_(0) {}
+      brownianBridge_(false), seed_(0), constantParameters_(false) {}
 
     template <class RNG, class S>
     inline MakeMCEuropeanEngine_2<RNG, S>& MakeMCEuropeanEngine_2<RNG, S>::withSteps(Size steps) {
@@ -203,6 +223,7 @@ namespace QuantLib {
     template <class RNG, class S>
     inline MakeMCEuropeanEngine_2<RNG, S>&
     MakeMCEuropeanEngine_2<RNG, S>::withConstantParameters(bool b) {
+        constantParameters_ = b;
         return *this;
     }
 
@@ -212,6 +233,7 @@ namespace QuantLib {
                    "number of steps not given");
         QL_REQUIRE(steps_ == Null<Size>() || stepsPerYear_ == Null<Size>(),
                    "number of steps overspecified");
+
         return boost::shared_ptr<PricingEngine>(new MCEuropeanEngine_2<RNG, S>(process_,
                                                                                steps_,
                                                                                stepsPerYear_,
@@ -220,10 +242,10 @@ namespace QuantLib {
                                                                                samples_,
                                                                                tolerance_,
                                                                                maxSamples_,
-                                                                               seed_));
+                                                                               seed_,
+                                                                               constantParameters_));
     }
 
 }
-
 
 #endif

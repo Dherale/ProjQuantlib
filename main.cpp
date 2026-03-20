@@ -10,7 +10,7 @@
 #include <ql/exercise.hpp>
 #include <ql/instruments/asianoption.hpp>
 #include <ql/instruments/europeanoption.hpp>
-#include <ql/instruments/lookbackoption.hpp>
+#include <ql/instruments/lookbackoption.hpp>    
 #include <ql/instruments/payoffs.hpp>
 #include <ql/pricingengines/asian/mc_discr_arith_av_strike.hpp>
 #include <ql/pricingengines/lookback/mclookbackengine.hpp>
@@ -28,7 +28,6 @@ int main() {
 
     try {
 
-        // modify the sample code below to suit your project
 
         Calendar calendar = TARGET();
         Date today = Date(24, February, 2022);
